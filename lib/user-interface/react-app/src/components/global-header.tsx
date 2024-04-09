@@ -62,13 +62,13 @@ export default function GlobalHeader() {
             text: theme === Mode.Dark ? "Light Mode" : "Dark Mode",
             onClick: onChangeThemeClick,
           },
-          {
-            type: "button",
-            text: "GitHub",
-            href: "https://github.com/aws-samples/aws-genai-llm-chatbot",
-            external: true,
-            externalIconAriaLabel: " (opens in a new tab)",
-          },
+          // {
+          //   type: "button",
+          //   text: "GitHub",
+          //   href: "https://github.com/aws-samples/aws-genai-llm-chatbot",
+          //   external: true,
+          //   externalIconAriaLabel: " (opens in a new tab)",
+          // },
           {
             type: "menu-dropdown",
             description: userName ?? "",
