@@ -6,6 +6,7 @@ import {
   PropertyFilter,
   Table,
   Link,
+  Alert,
 } from "@cloudscape-design/components";
 import useOnFollow from "../../../common/hooks/use-on-follow";
 import BaseAppLayout from "../../../components/base-app-layout";
@@ -17,19 +18,18 @@ import { TextHelper } from "../../../common/helpers/text-helper";
 import { PropertyFilterI18nStrings } from "../../../common/i18n/property-filter-i18n-strings";
 import { TableEmptyState } from "../../../components/table-empty-state";
 import { TableNoMatchState } from "../../../components/table-no-match-state";
-import {
-  ModelsColumnDefinitions,
-  ModelsColumnFilteringProperties,
-} from "./column-definitions";
+import { ModelsColumnDefinitions } from "./column-definitions";
 import { CHATBOT_NAME } from "../../../common/constants";
 import { Model } from "../../../API";
 import { Utils } from "../../../common/utils";
+import { ModelsColumnFilteringProperties } from "./model-filtering-properties";
 
 export default function Models() {
   const onFollow = useOnFollow();
   const appContext = useContext(AppContext);
   const [models, setModels] = useState<Model[]>([]);
   const [loading, setLoading] = useState(true);
+  const [globalError, setGlobalError] = useState<string | undefined>(undefined);
   const {
     items,
     actions,
@@ -64,11 +64,13 @@ export default function Models() {
 
     const apiClient = new ApiClient(appContext);
     try {
+      setGlobalError(undefined);
       const result = await apiClient.models.getModels();
 
       setModels(result.data!.listModels);
     } catch (error) {
       console.error(Utils.getErrorMessage(error));
+      setGlobalError(Utils.getErrorMessage(error));
     }
     setLoading(false);
   }, [appContext]);
@@ -98,29 +100,40 @@ export default function Models() {
         />
       }
       content={
-        <Table
-          {...collectionProps}
-          items={items}
-          columnDefinitions={ModelsColumnDefinitions}
-          variant="full-page"
-          stickyHeader={true}
-          resizableColumns={true}
-          header={<Header variant="awsui-h1-sticky">Models</Header>}
-          loading={loading}
-          loadingText="Loading Models"
-          filter={
-            <PropertyFilter
-              {...propertyFilterProps}
-              i18nStrings={PropertyFilterI18nStrings}
-              filteringPlaceholder={"Filter Models"}
-              countText={TextHelper.getTextFilterCounterText(
-                filteredItemsCount
-              )}
-              expandToViewport={true}
-            />
-          }
-          pagination={<Pagination {...paginationProps} />}
-        />
+        <>
+          {globalError && (
+            <Alert
+              statusIconAriaLabel="Error"
+              type="error"
+              header="Unable to load the models."
+            >
+              {globalError}
+            </Alert>
+          )}
+          <Table
+            {...collectionProps}
+            items={items}
+            columnDefinitions={ModelsColumnDefinitions}
+            variant="full-page"
+            stickyHeader={true}
+            resizableColumns={true}
+            header={<Header variant="awsui-h1-sticky">Models</Header>}
+            loading={loading}
+            loadingText="Loading Models"
+            filter={
+              <PropertyFilter
+                {...propertyFilterProps}
+                i18nStrings={PropertyFilterI18nStrings}
+                filteringPlaceholder={"Filter Models"}
+                countText={TextHelper.getTextFilterCounterText(
+                  filteredItemsCount
+                )}
+                expandToViewport={true}
+              />
+            }
+            pagination={<Pagination {...paginationProps} />}
+          />
+        </>
       }
       info={
         <HelpPanel header={<Header variant="h3">Foundation Models</Header>}>

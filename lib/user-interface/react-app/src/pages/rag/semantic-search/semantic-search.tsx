@@ -87,8 +87,10 @@ export default function SemanticSearch() {
       );
       console.log(result.data?.performSemanticSearch);
       setSearchResult(result.data?.performSemanticSearch);
+      /* eslint-disable-next-line  @typescript-eslint/no-explicit-any */
     } catch (error: any) {
       console.error(error);
+      /* eslint-disable-next-line  @typescript-eslint/no-explicit-any */
       setGlobalError(error.errors.map((x: any) => x.message).join(","));
     }
 
@@ -116,10 +118,12 @@ export default function SemanticSearch() {
           }
         }
 
+        /* eslint-disable-next-line  @typescript-eslint/no-non-null-asserted-optional-chain */
         setWorkspaces(result.data?.listWorkspaces!);
+        /* eslint-disable-next-line  @typescript-eslint/no-explicit-any */
       } catch (error: any) {
-        console.error(error);
-        setGlobalError(error.errors?.map((x: any) => x.error).join(","));
+        console.error(Utils.getErrorMessage(error));
+        setGlobalError(Utils.getErrorMessage(error));
       }
       setWorkspacesLoadingStatus("finished");
     })();
@@ -221,7 +225,11 @@ export default function SemanticSearch() {
                   {submitting && (
                     <StatusIndicator type="loading">Loading</StatusIndicator>
                   )}
-                  <Button variant="primary" onClick={onSearch}>
+                  <Button
+                    variant="primary"
+                    data-locator="submit"
+                    onClick={onSearch}
+                  >
                     Search
                   </Button>
                 </SpaceBetween>
@@ -243,6 +251,7 @@ export default function SemanticSearch() {
                   <SpaceBetween size="l">
                     <FormField label="Workspace" errorText={errors.workspace}>
                       <Select
+                        data-locator="select-workspace"
                         loadingText="Loading workspaces (might take few seconds)..."
                         statusType={workspacesLoadingStatus}
                         placeholder="Select a workspace"
@@ -261,6 +270,7 @@ export default function SemanticSearch() {
                     </FormField>
                     <FormField label="Search Query" errorText={errors.query}>
                       <Textarea
+                        data-locator="query"
                         value={data.query}
                         onChange={({ detail: { value } }) =>
                           onChange({ query: value })
@@ -275,7 +285,9 @@ export default function SemanticSearch() {
               <>
                 {searchResult.items.length === 0 && (
                   <Container>
-                    <Header variant="h3">No results found</Header>
+                    <Header variant="h3" data-locator="no-result">
+                      No results found
+                    </Header>
                   </Container>
                 )}
                 {searchResult.items.length > 0 && <Tabs tabs={tabs} />}

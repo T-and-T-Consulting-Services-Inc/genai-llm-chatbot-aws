@@ -1,20 +1,21 @@
-from .base import MultiModalModelBase
-from genai_core.types import ChatbotAction, ChatbotMessageType
-from urllib.parse import urljoin
 import os
-from langchain.llms import SagemakerEndpoint
+from urllib.parse import urljoin
+
+from aws_lambda_powertools import Logger
 from content_handler import ContentHandler
 from genai_core.registry import registry
+from genai_core.types import ChatbotMessageType
+from langchain.llms import SagemakerEndpoint
+
+from .base import MultiModalModelBase
+
+logger = Logger()
 
 
 class Idefics(MultiModalModelBase):
-    model_id: str
-
-    def __init__(self, model_id: str):
-        self.model_id = model_id
-
-    def format_prompt(self, prompt: str, messages: list, files: list) -> str:
-
+    def format_prompt(
+        self, prompt: str, messages: list, files: list, user_id: str
+    ) -> str:
         human_prompt_template = "User:{prompt}"
         human_prompt_with_image = "User:{prompt}![]({image})"
         ai_prompt_template = "Assistant:{prompt}"
@@ -26,10 +27,14 @@ class Idefics(MultiModalModelBase):
                 if not message_files:
                     prompts.append(human_prompt_template.format(prompt=message.content))
                 for message_file in message_files:
+                    image = urljoin(
+                        os.environ["CHATBOT_FILES_PRIVATE_API"],
+                        user_id + "/" + message_file["key"],
+                    )
                     prompts.append(
                         human_prompt_with_image.format(
                             prompt=message.content,
-                            image=f"{urljoin(os.environ['CHATBOT_FILES_PRIVATE_API'], message_file['key'])}",
+                            image=image,
                         )
                     )
             if message.type.lower() == ChatbotMessageType.AI.value.lower():
@@ -39,7 +44,7 @@ class Idefics(MultiModalModelBase):
             prompts.append(human_prompt_template.format(prompt=prompt))
 
         for file in files:
-            key = file["key"]
+            key = user_id + "/" + file["key"]
             prompts.append(
                 human_prompt_with_image.format(
                     prompt=prompt,
@@ -50,11 +55,11 @@ class Idefics(MultiModalModelBase):
         prompts.append("<end_of_utterance>\nAssistant:")
 
         prompt_template = "".join(prompts)
-        print(prompt_template)
+        logger.info(prompt_template)
         return prompt_template
 
     def handle_run(self, prompt: str, model_kwargs: dict):
-        print(model_kwargs)
+        logger.info("Incoming request for idefics", model_kwargs=model_kwargs)
         params = {
             "do_sample": True,
             "top_p": 0.2,
@@ -78,7 +83,9 @@ class Idefics(MultiModalModelBase):
         )
 
         mlm_response = mlm.predict(prompt)
-        return mlm_response
+        return {
+            "content": mlm_response,
+        }
 
 
 registry.register(r"^sagemaker.*idefics*", Idefics)

@@ -45,6 +45,7 @@ export default function AuroraWorkspaceSettings(
             <div>
               <StatusIndicator
                 type={Labels.statusTypeMap[props.workspace.status!]}
+                data-locator="workspace-status"
               >
                 {Labels.statusMap[props.workspace.status!]}
               </StatusIndicator>
@@ -66,11 +67,11 @@ export default function AuroraWorkspaceSettings(
           </div>
           <div>
             <Box variant="awsui-key-label">Cross-encoder provider</Box>
-            <div>{props.workspace.crossEncoderModelProvider}</div>
+            <div>{props.workspace.crossEncoderModelProvider ?? "None"}</div>
           </div>
           <div>
             <Box variant="awsui-key-label">Cross-encoder model</Box>
-            <div>{props.workspace.crossEncoderModelName}</div>
+            <div>{props.workspace.crossEncoderModelName ?? "None"}</div>
           </div>
         </SpaceBetween>
         <SpaceBetween size="l">
@@ -90,7 +91,7 @@ export default function AuroraWorkspaceSettings(
           </div>
           <div>
             <Box variant="awsui-key-label">Hybrid search</Box>
-            <div>{props.workspace.hybridSearch ? "yes" : "no"}</div>
+            <div>{props.workspace.hybridSearch ? "Yes" : "No"}</div>
           </div>
           <div>
             <Box variant="awsui-key-label">Chunk size</Box>

@@ -10,19 +10,25 @@ import { SemanticSearchClient } from "./semantic-search-client";
 import { DocumentsClient } from "./documents-client";
 import { KendraClient } from "./kendra-client";
 import { UserFeedbackClient } from "./user-feedback-client";
+import { BedrockKBClient } from "./kb-client";
+import { RolesClient } from "./roles-client";
+import { ApplicationsClient } from "./applications-client";
 
 export class ApiClient {
-  private _healthClient: HealthClient | undefined;
-  private _ragEnginesClient: RagEnginesClient | undefined;
-  private _embeddingsClient: EmbeddingsClient | undefined;
-  private _crossEncodersClient: CrossEncodersClient | undefined;
-  private _modelsClient: ModelsClient | undefined;
-  private _workspacesClient: WorkspacesClient | undefined;
-  private _sessionsClient: SessionsClient | undefined;
-  private _semanticSearchClient: SemanticSearchClient | undefined;
-  private _documentsClient: DocumentsClient | undefined;
-  private _kendraClient: KendraClient | undefined;
-  private _userFeedbackClient: UserFeedbackClient | undefined;
+  private _healthClient?: HealthClient;
+  private _ragEnginesClient?: RagEnginesClient;
+  private _embeddingsClient?: EmbeddingsClient;
+  private _crossEncodersClient?: CrossEncodersClient;
+  private _modelsClient?: ModelsClient;
+  private _workspacesClient?: WorkspacesClient;
+  private _sessionsClient?: SessionsClient;
+  private _semanticSearchClient?: SemanticSearchClient;
+  private _documentsClient?: DocumentsClient;
+  private _kendraClient?: KendraClient;
+  private _userFeedbackClient?: UserFeedbackClient;
+  private _bedrockKBClient?: BedrockKBClient;
+  private _rolesClient?: RolesClient;
+  private _applicationsClient?: ApplicationsClient;
 
   public get health() {
     if (!this._healthClient) {
@@ -104,12 +110,36 @@ export class ApiClient {
     return this._kendraClient;
   }
 
+  public get bedrockKB() {
+    if (!this._bedrockKBClient) {
+      this._bedrockKBClient = new BedrockKBClient();
+    }
+
+    return this._bedrockKBClient;
+  }
+
   public get userFeedback() {
     if (!this._userFeedbackClient) {
       this._userFeedbackClient = new UserFeedbackClient();
     }
 
     return this._userFeedbackClient;
+  }
+
+  public get roles() {
+    if (!this._rolesClient) {
+      this._rolesClient = new RolesClient();
+    }
+
+    return this._rolesClient;
+  }
+
+  public get applications() {
+    if (!this._applicationsClient) {
+      this._applicationsClient = new ApplicationsClient();
+    }
+
+    return this._applicationsClient;
   }
 
   constructor(protected _appConfig: AppConfig) {}

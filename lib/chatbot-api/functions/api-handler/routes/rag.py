@@ -1,20 +1,20 @@
 import genai_core.parameters
 import genai_core.kendra
-from pydantic import BaseModel
 from aws_lambda_powertools import Logger, Tracer
 from aws_lambda_powertools.event_handler.appsync import Router
+from genai_core.auth import UserPermissions
 
 tracer = Tracer()
 router = Router()
 logger = Logger()
-
-
-class KendraDataSynchRequest(BaseModel):
-    workspaceId: str
+permissions = UserPermissions(router)
 
 
 @router.resolver(field_name="listRagEngines")
 @tracer.capture_method
+@permissions.approved_roles(
+    [permissions.ADMIN_ROLE, permissions.WORKSPACES_MANAGER_ROLE]
+)
 def engines():
     config = genai_core.parameters.get_config()
 
@@ -34,6 +34,11 @@ def engines():
             "id": "kendra",
             "name": "Amazon Kendra",
             "enabled": engines.get("kendra", {}).get("enabled", False) == True,
+        },
+        {
+            "id": "bedrock_kb",
+            "name": "Bedrock Knowledge Bases",
+            "enabled": engines.get("knowledgeBase", {}).get("enabled", False) == True,
         },
     ]
 

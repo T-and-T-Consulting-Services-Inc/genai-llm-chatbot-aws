@@ -1,7 +1,7 @@
-import * as cdk from "aws-cdk-lib";
 import * as ssm from "aws-cdk-lib/aws-ssm";
 import { Construct } from "constructs";
 import * as iam from "aws-cdk-lib/aws-iam";
+import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import { Shared } from "../shared";
 import {
   Modality,
@@ -18,7 +18,7 @@ import {
   JumpStartModel,
 } from "@cdklabs/generative-ai-cdk-constructs";
 import { NagSuppressions } from "cdk-nag";
-import { createStartSchedule, createStopSchedule } from "./sagemaker-schedule"
+import { createStartSchedule, createStopSchedule } from "./sagemaker-schedule";
 
 export interface ModelsProps {
   readonly config: SystemConfig;
@@ -34,6 +34,14 @@ export class Models extends Construct {
 
     const models: SageMakerModelEndpoint[] = [];
 
+    let hfTokenSecret: secretsmanager.Secret | undefined;
+    if (props.config.llms.huggingfaceApiSecretArn) {
+      hfTokenSecret = secretsmanager.Secret.fromSecretCompleteArn(
+        this,
+        "HFTokenSecret",
+        props.config.llms.huggingfaceApiSecretArn
+      ) as secretsmanager.Secret;
+    }
     if (
       props.config.llms?.sagemaker.includes(SupportedSageMakerModels.FalconLite)
     ) {
@@ -106,11 +114,13 @@ export class Models extends Construct {
             ),
           },
           container:
-            DeepLearningContainerImage.HUGGINGFACE_PYTORCH_TGI_INFERENCE_2_0_1_TGI1_1_0_GPU_PY39_CU118_UBUNTU20_04,
+            DeepLearningContainerImage.HUGGINGFACE_PYTORCH_TGI_INFERENCE_2_1_1_TGI2_0_0_GPU_PY310_CU121_UBUNTU22_04,
           instanceType: SageMakerInstanceType.ML_G5_2XLARGE,
           startupHealthCheckTimeoutInSeconds: 300,
           endpointName: MISTRAL_7B_ENDPOINT_NAME,
           environment: {
+            HF_TOKEN:
+              hfTokenSecret?.secretValue.unsafeUnwrap().toString() || "",
             SM_NUM_GPUS: JSON.stringify(1),
             MAX_INPUT_LENGTH: JSON.stringify(2048),
             MAX_TOTAL_TOKENS: JSON.stringify(4096),
@@ -152,14 +162,14 @@ export class Models extends Construct {
               (subnet) => subnet.subnetId
             ),
           },
-          container: DeepLearningContainerImage.fromDeepLearningContainerImage(
-            "huggingface-pytorch-tgi-inference",
-            "2.1.1-tgi1.3.3-gpu-py310-cu121-ubuntu20.04"
-          ),
+          container:
+            DeepLearningContainerImage.HUGGINGFACE_PYTORCH_TGI_INFERENCE_2_1_1_TGI2_0_0_GPU_PY310_CU121_UBUNTU22_04,
           instanceType: SageMakerInstanceType.ML_G5_2XLARGE,
           startupHealthCheckTimeoutInSeconds: 300,
           endpointName: MISTRAL_7B_INSTRUCT2_ENDPOINT_NAME,
           environment: {
+            HF_TOKEN:
+              hfTokenSecret?.secretValue.unsafeUnwrap().toString() || "",
             SM_NUM_GPUS: JSON.stringify(1),
             MAX_INPUT_LENGTH: JSON.stringify(2048),
             MAX_TOTAL_TOKENS: JSON.stringify(4096),
@@ -205,14 +215,14 @@ export class Models extends Construct {
               (subnet) => subnet.subnetId
             ),
           },
-          container: DeepLearningContainerImage.fromDeepLearningContainerImage(
-            "huggingface-pytorch-tgi-inference",
-            "2.1.1-tgi1.3.3-gpu-py310-cu121-ubuntu20.04"
-          ),
+          container:
+            DeepLearningContainerImage.HUGGINGFACE_PYTORCH_TGI_INFERENCE_2_1_1_TGI2_0_0_GPU_PY310_CU121_UBUNTU22_04,
           instanceType: SageMakerInstanceType.ML_G5_48XLARGE,
           startupHealthCheckTimeoutInSeconds: 300,
           endpointName: MISTRAL_8x7B_INSTRUCT2_ENDPOINT_NAME,
           environment: {
+            HF_TOKEN:
+              hfTokenSecret?.secretValue.unsafeUnwrap().toString() || "",
             SM_NUM_GPUS: JSON.stringify(8),
             MAX_INPUT_LENGTH: JSON.stringify(24576),
             MAX_TOTAL_TOKENS: JSON.stringify(32768),
@@ -227,6 +237,42 @@ export class Models extends Construct {
       models.push({
         name: MISTRAL_8x7B_INSTRUCT2_ENDPOINT_NAME!,
         endpoint: mistral8x7B.cfnEndpoint,
+        responseStreamingSupported: false,
+        inputModalities: [Modality.Text],
+        outputModalities: [Modality.Text],
+        interface: ModelInterface.LangChain,
+        ragSupported: true,
+      });
+    }
+
+    if (
+      props.config.llms?.sagemaker.includes(
+        SupportedSageMakerModels.Mistral7b_Instruct3
+      )
+    ) {
+      const MISTRACL_7B_3_ENDPOINT_NAME = "mistralai/Mistral-7B-Instruct-v0.3";
+
+      const mistral7BInstruct3 = new JumpStartSageMakerEndpoint(
+        this,
+        "Mistral7b_Instruct3",
+        {
+          model: JumpStartModel.HUGGINGFACE_LLM_MISTRAL_7B_INSTRUCT_3_0_0,
+          instanceType: SageMakerInstanceType.ML_G5_2XLARGE,
+          vpcConfig: {
+            securityGroupIds: [props.shared.vpc.vpcDefaultSecurityGroup],
+            subnets: props.shared.vpc.privateSubnets.map(
+              (subnet) => subnet.subnetId
+            ),
+          },
+          endpointName: "Mistral-7B-Instruct-v0-3",
+        }
+      );
+
+      this.suppressCdkNagWarningForEndpointRole(mistral7BInstruct3.role);
+
+      models.push({
+        name: MISTRACL_7B_3_ENDPOINT_NAME,
+        endpoint: mistral7BInstruct3.cfnEndpoint,
         responseStreamingSupported: false,
         inputModalities: [Modality.Text],
         outputModalities: [Modality.Text],
@@ -378,20 +424,33 @@ export class Models extends Construct {
 
     this.models = models;
     this.modelsParameter = modelsParameter;
-    
-    if (models.length > 0 && props.config.llms?.sagemakerSchedule?.enabled) {
 
-      let schedulerRole: iam.Role = new iam.Role(this, 'SchedulerRole', {
-        assumedBy: new iam.ServicePrincipal('scheduler.amazonaws.com'),
-        description: 'Role for Scheduler to interact with SageMaker',
+    if (models.length > 0 && props.config.llms?.sagemakerSchedule?.enabled) {
+      const schedulerRole: iam.Role = new iam.Role(this, "SchedulerRole", {
+        assumedBy: new iam.ServicePrincipal("scheduler.amazonaws.com"),
+        description: "Role for Scheduler to interact with SageMaker",
       });
-      
-      schedulerRole.addManagedPolicy(iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonSageMakerFullAccess'));
+
+      schedulerRole.addManagedPolicy(
+        iam.ManagedPolicy.fromAwsManagedPolicyName("AmazonSageMakerFullAccess")
+      );
       this.suppressCdkNagWarningForEndpointRole(schedulerRole);
 
       models.forEach((model) => {
-          createStartSchedule(this, id, model.endpoint, schedulerRole, props.config);
-          createStopSchedule(this, id, model.endpoint, schedulerRole, props.config);
+        createStartSchedule(
+          this,
+          id,
+          model.endpoint,
+          schedulerRole,
+          props.config
+        );
+        createStopSchedule(
+          this,
+          id,
+          model.endpoint,
+          schedulerRole,
+          props.config
+        );
       });
     }
   }

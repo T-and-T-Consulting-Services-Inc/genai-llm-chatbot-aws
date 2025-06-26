@@ -5,7 +5,11 @@ import {
   ChatBotMessageType,
   FeedbackData,
 } from "./types";
-import { SpaceBetween, StatusIndicator } from "@cloudscape-design/components";
+import {
+  Alert,
+  SpaceBetween,
+  StatusIndicator,
+} from "@cloudscape-design/components";
 import { v4 as uuidv4 } from "uuid";
 import { AppContext } from "../../common/app-context";
 import { ApiClient } from "../../common/api-client/api-client";
@@ -13,14 +17,21 @@ import ChatMessage from "./chat-message";
 import ChatInputPanel, { ChatScrollState } from "./chat-input-panel";
 import styles from "../../styles/chat.module.scss";
 import { CHATBOT_NAME } from "../../common/constants";
+import { Application } from "../../API";
 
-export default function Chat(props: { sessionId?: string }) {
+export default function Chat(props: {
+  sessionId?: string;
+  applicationId?: string;
+}) {
   const appContext = useContext(AppContext);
   const [running, setRunning] = useState<boolean>(false);
-  const [session, setSession] = useState<{ id: string; loading: boolean }>({
-    id: props.sessionId ?? uuidv4(),
-    loading: typeof props.sessionId !== "undefined",
-  });
+  const [session, setSession] = useState<
+    { id: string; loading: boolean } | undefined
+  >();
+  const [application, setApplication] = useState<Application>(
+    {} as Application
+  );
+  const [initError, setInitError] = useState<string | undefined>(undefined);
   const [configuration, setConfiguration] = useState<ChatBotConfiguration>(
     () => ({
       streaming: true,
@@ -28,7 +39,15 @@ export default function Chat(props: { sessionId?: string }) {
       maxTokens: 512,
       temperature: 0.6,
       topP: 0.9,
-      files: null,
+      images: null,
+      documents: null,
+      videos: null,
+      seed: 0,
+      filesBlob: {
+        images: null,
+        documents: null,
+        videos: null,
+      },
     })
   );
 
@@ -52,10 +71,8 @@ export default function Chat(props: { sessionId?: string }) {
         const result = await apiClient.sessions.getSession(props.sessionId);
 
         if (result.data?.getSession?.history) {
-          console.log(result.data.getSession);
           ChatScrollState.skipNextHistoryUpdate = true;
           ChatScrollState.skipNextScrollEvent = true;
-          console.log("History", result.data.getSession.history);
           setMessageHistory(
             result
               .data!.getSession!.history.filter((x) => x !== null)
@@ -80,12 +97,15 @@ export default function Chat(props: { sessionId?: string }) {
     })();
   }, [appContext, props.sessionId]);
 
-  const handleFeedback = (feedbackType: 1 | 0, idx: number, message: ChatBotHistoryItem) => {
+  const handleFeedback = (
+    feedbackType: 1 | 0,
+    idx: number,
+    message: ChatBotHistoryItem
+  ) => {
     if (message.metadata.sessionId) {
-      
       let prompt = "";
-      if (Array.isArray(message.metadata.prompts) && Array.isArray(message.metadata.prompts[0])) { 
-          prompt = message.metadata.prompts[0][0];
+      if (Array.isArray(message.metadata.prompts)) {
+        prompt = (message.metadata?.prompts[0] as string) || "";
       }
       const completion = message.content;
       const model = message.metadata.modelId;
@@ -95,7 +115,8 @@ export default function Chat(props: { sessionId?: string }) {
         feedback: feedbackType,
         prompt: prompt,
         completion: completion,
-        model: model as string
+        model: model as string,
+        applicationId: props.applicationId,
       };
       addUserFeedback(feedbackData);
     }
@@ -105,26 +126,46 @@ export default function Chat(props: { sessionId?: string }) {
     if (!appContext) return;
 
     const apiClient = new ApiClient(appContext);
-    await apiClient.userFeedback.addUserFeedback({feedbackData});
+    await apiClient.userFeedback.addUserFeedback({ feedbackData });
   };
 
   return (
-    <div className={styles.chat_container}>
-      <SpaceBetween direction="vertical" size="m">
-        {messageHistory.map((message, idx) => (
-          <ChatMessage
-            key={idx}
-            message={message}
-            showMetadata={configuration.showMetadata}
-            onThumbsUp={() => handleFeedback(1, idx, message)}
-            onThumbsDown={() => handleFeedback(0, idx, message)}
-          />
-        ))}
+    <div
+      className={
+        props.applicationId ? styles.chat_app_container : styles.chat_container
+      }
+    >
+      {initError && (
+        <Alert
+          statusIconAriaLabel="Error"
+          type="error"
+          header="Unable to initalize the Chatbot."
+        >
+          {initError}
+        </Alert>
+      )}
+      <SpaceBetween direction="vertical" size="xxs">
+        {messageHistory.map((message, idx) => {
+          return (
+            <ChatMessage
+              key={idx}
+              message={message}
+              showMetadata={configuration.showMetadata}
+              onThumbsUp={() => handleFeedback(1, idx, message)}
+              onThumbsDown={() => handleFeedback(0, idx, message)}
+            />
+          );
+        })}
       </SpaceBetween>
       <div className={styles.welcome_text}>
-        {messageHistory.length == 0 && !session?.loading && (
-          <center>{CHATBOT_NAME}</center>
-        )}
+        {messageHistory.length == 0 &&
+          !session?.loading &&
+          !props.applicationId && <center>{CHATBOT_NAME}</center>}
+        {messageHistory.length == 0 &&
+          !session?.loading &&
+          props.applicationId && (
+            <center>{application.name ?? CHATBOT_NAME}</center>
+          )}
         {session?.loading && (
           <center>
             <StatusIndicator type="loading">Loading session</StatusIndicator>
@@ -132,15 +173,20 @@ export default function Chat(props: { sessionId?: string }) {
         )}
       </div>
       <div className={styles.input_container}>
-        <ChatInputPanel
-          session={session}
-          running={running}
-          setRunning={setRunning}
-          messageHistory={messageHistory}
-          setMessageHistory={(history) => setMessageHistory(history)}
-          configuration={configuration}
-          setConfiguration={setConfiguration}
-        />
+        {session && (
+          <ChatInputPanel
+            session={session}
+            running={running}
+            setRunning={setRunning}
+            messageHistory={messageHistory}
+            setMessageHistory={(history) => setMessageHistory(history)}
+            setInitErrorMessage={(error) => setInitError(error)}
+            configuration={configuration}
+            setConfiguration={setConfiguration}
+            applicationId={props.applicationId}
+            setApplication={setApplication}
+          />
+        )}
       </div>
     </div>
   );

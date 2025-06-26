@@ -1,15 +1,18 @@
 import * as cdk from "aws-cdk-lib";
+import * as kms from "aws-cdk-lib/aws-kms";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import * as ssm from "aws-cdk-lib/aws-ssm";
 import * as logs from "aws-cdk-lib/aws-logs";
+import * as wafv2 from "aws-cdk-lib/aws-wafv2";
 import { Construct } from "constructs";
 import * as path from "path";
 import { Layer } from "../layer";
-import { SystemConfig, SupportedBedrockRegion } from "./types";
+import { SupportedBedrockRegion, SystemConfig } from "./types";
 import { SharedAssetBundler } from "./shared-asset-bundler";
 import { NagSuppressions } from "cdk-nag";
+import { getConstructId } from "../utils";
 
 const pythonRuntime = lambda.Runtime.PYTHON_3_11;
 const lambdaArchitecture = lambda.Architecture.X86_64;
@@ -21,6 +24,10 @@ export interface SharedProps {
 
 export class Shared extends Construct {
   readonly vpc: ec2.Vpc;
+  readonly kmsKey: kms.Key;
+  readonly kmsKeyAlias: string;
+  readonly queueKmsKey: kms.Key;
+  readonly queueKmsKeyAlias: string;
   readonly defaultEnvironmentVariables: Record<string, string>;
   readonly configParameter: ssm.StringParameter;
   readonly pythonRuntime: lambda.Runtime = pythonRuntime;
@@ -31,18 +38,49 @@ export class Shared extends Construct {
   readonly powerToolsLayer: lambda.ILayerVersion;
   readonly sharedCode: SharedAssetBundler;
   readonly s3vpcEndpoint: ec2.InterfaceVpcEndpoint;
+  readonly webACLRules: wafv2.CfnWebACL.RuleProperty[] = [];
 
   constructor(scope: Construct, id: string, props: SharedProps) {
     super(scope, id);
 
-    const powerToolsLayerVersion = "46";
+    this.kmsKeyAlias = props.config.prefix + "genaichatbot-shared-key";
+    this.queueKmsKeyAlias =
+      props.config.prefix + "genaichatbot-queue-shared-key";
+    const powerToolsLayerVersion = "2";
 
     this.defaultEnvironmentVariables = {
       POWERTOOLS_DEV: "false",
       LOG_LEVEL: "INFO",
-      POWERTOOLS_LOGGER_LOG_EVENT: "true",
+      // Event might contain end user information and should not be logged by default
+      POWERTOOLS_LOGGER_LOG_EVENT: "false",
       POWERTOOLS_SERVICE_NAME: "chatbot",
+      AWS_XRAY_SDK_ENABLED: props.config.advancedMonitoring ? "true" : "false",
+      POWERTOOLS_TRACE_DISABLED: props.config.advancedMonitoring
+        ? "false"
+        : "true",
     };
+
+    if (props.config.createCMKs) {
+      this.kmsKey = new kms.Key(this, "KMSKey", {
+        enableKeyRotation: true,
+        // The key is not a data store but is needed to read the retained tables for example
+        removalPolicy:
+          props.config.retainOnDelete === true
+            ? cdk.RemovalPolicy.RETAIN_ON_UPDATE_OR_DELETE
+            : cdk.RemovalPolicy.DESTROY,
+        alias: this.kmsKeyAlias,
+      });
+
+      // Revisit once the following is merged (Causing circular dependency without a second key)
+      // https://github.com/aws/aws-cdk/pull/31155
+      // Using the same queue for an SQS and event is causing issues.
+      this.queueKmsKey = new kms.Key(this, "QueueKMSKey", {
+        enableKeyRotation: true,
+        // The key is only used for temporary stores (SQS)
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+        alias: this.queueKmsKeyAlias,
+      });
+    }
 
     let vpc: ec2.Vpc;
     if (!props.config.vpc?.vpcId) {
@@ -65,7 +103,11 @@ export class Shared extends Construct {
         ],
       });
       const logGroup = new logs.LogGroup(this, "FLowLogsLogGroup", {
-        removalPolicy: cdk.RemovalPolicy.DESTROY,
+        removalPolicy:
+          props.config.retainOnDelete === true
+            ? cdk.RemovalPolicy.RETAIN_ON_UPDATE_OR_DELETE
+            : cdk.RemovalPolicy.DESTROY,
+        retention: props.config.logRetention,
       });
       new ec2.FlowLog(this, "FlowLog", {
         resourceType: ec2.FlowLogResourceType.fromVpc(vpc),
@@ -91,7 +133,7 @@ export class Shared extends Construct {
         privateDnsEnabled: true,
         open: true,
       });
-      
+
       this.s3vpcEndpoint = s3vpcEndpoint;
 
       s3vpcEndpoint.node.addDependency(s3GatewayEndpoint);
@@ -116,93 +158,112 @@ export class Shared extends Construct {
       if (props.config.privateWebsite) {
         // Create VPC Endpoint for AppSync
         vpc.addInterfaceEndpoint("AppSyncEndpoint", {
-            service: ec2.InterfaceVpcEndpointAwsService.APP_SYNC,
+          service: ec2.InterfaceVpcEndpointAwsService.APP_SYNC,
         });
 
         // Create VPC Endpoint for Lambda
         vpc.addInterfaceEndpoint("LambdaEndpoint", {
-            service: ec2.InterfaceVpcEndpointAwsService.LAMBDA,
+          service: ec2.InterfaceVpcEndpointAwsService.LAMBDA,
         });
 
         // Create VPC Endpoint for SNS
         vpc.addInterfaceEndpoint("SNSEndpoint", {
-            service: ec2.InterfaceVpcEndpointAwsService.SNS,
+          service: ec2.InterfaceVpcEndpointAwsService.SNS,
         });
 
         // Create VPC Endpoint for Step Functions
         vpc.addInterfaceEndpoint("StepFunctionsEndpoint", {
-            service: ec2.InterfaceVpcEndpointAwsService.STEP_FUNCTIONS,
+          service: ec2.InterfaceVpcEndpointAwsService.STEP_FUNCTIONS,
         });
 
         // Create VPC Endpoint for SSM
         vpc.addInterfaceEndpoint("SSMEndpoint", {
-            service: ec2.InterfaceVpcEndpointAwsService.SSM,
+          service: ec2.InterfaceVpcEndpointAwsService.SSM,
         });
 
         // Create VPC Endpoint for KMS
         vpc.addInterfaceEndpoint("KMSEndpoint", {
-            service: ec2.InterfaceVpcEndpointAwsService.KMS,
+          service: ec2.InterfaceVpcEndpointAwsService.KMS,
         });
 
         // Create VPC Endpoint for Bedrock
-        if (props.config.bedrock?.enabled && Object.values(SupportedBedrockRegion).some(val => val === cdk.Stack.of(this).region)){
+        if (
+          props.config.bedrock?.enabled &&
+          Object.values(SupportedBedrockRegion).some(
+            (val) => val === cdk.Stack.of(this).region
+          )
+        ) {
           if (props.config.bedrock?.region !== cdk.Stack.of(this).region) {
-            throw new Error(`Bedrock is only supported in the same region as the stack when using private website (Bedrock region: ${props.config.bedrock?.region}, Stack region: ${cdk.Stack.of(this).region}).`);
+            throw new Error(
+              `Bedrock is only supported in the same region as the stack when using private website (Bedrock region: ${
+                props.config.bedrock?.region
+              }, Stack region: ${cdk.Stack.of(this).region}).`
+            );
           }
+
           vpc.addInterfaceEndpoint("BedrockEndpoint", {
-            service: new ec2.InterfaceVpcEndpointService('com.amazonaws.'+cdk.Aws.REGION+'.bedrock-runtime', 443),
-            privateDnsEnabled: true
+            service: ec2.InterfaceVpcEndpointAwsService.BEDROCK,
+          });
+
+          vpc.addInterfaceEndpoint("BedrockRuntimeEndpoint", {
+            service: ec2.InterfaceVpcEndpointAwsService.BEDROCK_RUNTIME,
           });
         }
 
         // Create VPC Endpoint for Kendra
-        if (props.config.rag.engines.kendra.enabled){
+        if (props.config.rag.engines.kendra.enabled) {
           vpc.addInterfaceEndpoint("KendraEndpoint", {
-              service: ec2.InterfaceVpcEndpointAwsService.KENDRA,
+            service: ec2.InterfaceVpcEndpointAwsService.KENDRA,
           });
         }
 
         // Create VPC Endpoint for RDS/Aurora
         if (props.config.rag.engines.aurora.enabled) {
           vpc.addInterfaceEndpoint("RDSEndpoint", {
-              service: ec2.InterfaceVpcEndpointAwsService.RDS,
+            service: ec2.InterfaceVpcEndpointAwsService.RDS,
           });
 
           // Create VPC Endpoint for RDS Data
           vpc.addInterfaceEndpoint("RDSDataEndpoint", {
-              service: ec2.InterfaceVpcEndpointAwsService.RDS_DATA,
+            service: ec2.InterfaceVpcEndpointAwsService.RDS_DATA,
           });
         }
 
         // Create VPC Endpoints needed for Aurora & Opensearch Indexing
-        if (props.config.rag.engines.aurora.enabled ||
-          props.config.rag.engines.opensearch.enabled) {
+        if (
+          props.config.rag.engines.aurora.enabled ||
+          props.config.rag.engines.opensearch.enabled
+        ) {
           // Create VPC Endpoint for ECS
           vpc.addInterfaceEndpoint("ECSEndpoint", {
-              service: ec2.InterfaceVpcEndpointAwsService.ECS,
+            service: ec2.InterfaceVpcEndpointAwsService.ECS,
           });
 
           // Create VPC Endpoint for Batch
           vpc.addInterfaceEndpoint("BatchEndpoint", {
-              service: ec2.InterfaceVpcEndpointAwsService.BATCH,
+            service: ec2.InterfaceVpcEndpointAwsService.BATCH,
           });
 
           // Create VPC Endpoint for EC2
           vpc.addInterfaceEndpoint("EC2Endpoint", {
-              service: ec2.InterfaceVpcEndpointAwsService.EC2,
+            service: ec2.InterfaceVpcEndpointAwsService.EC2,
           });
         }
       }
     }
 
-    const configParameter = new ssm.StringParameter(this, "Config", {
+    this.webACLRules = this.createWafRules(props.config.rateLimitPerIP ?? 400);
+
+    this.configParameter = new ssm.StringParameter(this, "Config", {
       stringValue: JSON.stringify(props.config),
     });
 
+    //https://docs.powertools.aws.dev/lambda/python/3.2.0/
+    const pythonVersion = pythonRuntime.name.replace(".", "");
     const powerToolsArn =
       lambdaArchitecture === lambda.Architecture.X86_64
-        ? `arn:${cdk.Aws.PARTITION}:lambda:${cdk.Aws.REGION}:017000801446:layer:AWSLambdaPowertoolsPythonV2:${powerToolsLayerVersion}`
-        : `arn:${cdk.Aws.PARTITION}:lambda:${cdk.Aws.REGION}:017000801446:layer:AWSLambdaPowertoolsPythonV2-Arm64:${powerToolsLayerVersion}`;
+        ? `arn:${cdk.Aws.PARTITION}:lambda:${cdk.Aws.REGION}:017000801446:layer:AWSLambdaPowertoolsPythonV3-${pythonVersion}-x86_64:${powerToolsLayerVersion}`
+        : `arn:${cdk.Aws.PARTITION}:lambda:${cdk.Aws.REGION}:017000801446:layer:AWSLambdaPowertoolsPythonV3-${pythonVersion}-arm64:${powerToolsLayerVersion}`;
 
     const powerToolsLayer = lambda.LayerVersion.fromLayerVersionArn(
       this,
@@ -224,6 +285,7 @@ export class Shared extends Construct {
       this,
       "X-Origin-Verify-Secret",
       {
+        encryptionKey: this.kmsKey,
         removalPolicy: cdk.RemovalPolicy.DESTROY,
         generateSecretString: {
           excludePunctuation: true,
@@ -234,19 +296,20 @@ export class Shared extends Construct {
     );
 
     const apiKeysSecret = new secretsmanager.Secret(this, "ApiKeysSecret", {
+      encryptionKey: this.kmsKey,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       secretObjectValue: {},
     });
 
     this.vpc = vpc;
-    this.configParameter = configParameter;
     this.xOriginVerifySecret = xOriginVerifySecret;
     this.apiKeysSecret = apiKeysSecret;
     this.powerToolsLayer = powerToolsLayer;
     this.commonLayer = commonLayer.layer;
 
-    new cdk.CfnOutput(this, "ApiKeysSecretName", {
+    new cdk.CfnOutput(this, getConstructId("ApiKeysSecretName", props.config), {
       value: apiKeysSecret.secretName,
+      exportName: getConstructId("ApiKeysSecretName", props.config),
     });
 
     /**
@@ -258,5 +321,33 @@ export class Shared extends Construct {
     NagSuppressions.addResourceSuppressions(apiKeysSecret, [
       { id: "AwsSolutions-SMG4", reason: "Secret value is blank." },
     ]);
+  }
+
+  private createWafRules(ratePerIP: number): wafv2.CfnWebACL.RuleProperty[] {
+    /**
+     * The rate limit is the maximum number of requests from a
+     * single IP address that are allowed in a ten-minute period.
+     * The IP address is automatically unblocked after it falls below the limit.
+     */
+    const ruleLimitRequests: wafv2.CfnWebACL.RuleProperty = {
+      name: "LimitRequestsPerIP",
+      priority: 10,
+      action: {
+        block: {},
+      },
+      statement: {
+        rateBasedStatement: {
+          limit: ratePerIP,
+          evaluationWindowSec: 60 * 10,
+          aggregateKeyType: "IP",
+        },
+      },
+      visibilityConfig: {
+        sampledRequestsEnabled: true,
+        cloudWatchMetricsEnabled: true,
+        metricName: "LimitRequestsPerIP",
+      },
+    };
+    return [ruleLimitRequests];
   }
 }

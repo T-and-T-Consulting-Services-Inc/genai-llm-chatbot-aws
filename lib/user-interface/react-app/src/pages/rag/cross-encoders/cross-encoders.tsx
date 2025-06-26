@@ -104,10 +104,12 @@ export default function CrossEncoders() {
         const result = await apiClient.crossEncoders.getModels();
 
         console.log(result?.data?.listCrossEncoders);
+        /* eslint-disable-next-line  @typescript-eslint/no-non-null-asserted-optional-chain */
         setCrossEncoderModels(result?.data?.listCrossEncoders!);
         setCrossEncoderModelsStatus("finished");
       } catch (error) {
         console.error(Utils.getErrorMessage(error));
+        setGlobalError(Utils.getErrorMessage(error));
         setCrossEncoderModelsStatus("error");
       }
     })();
@@ -228,6 +230,7 @@ export default function CrossEncoders() {
                   )}
                   <Button
                     data-testid="create"
+                    data-locator="submit"
                     disabled={submitting}
                     variant="primary"
                     onClick={submitForm}
@@ -246,6 +249,7 @@ export default function CrossEncoders() {
                       errorText={errors.crossEncoderModel}
                     >
                       <Select
+                        data-locator="select-model"
                         disabled={submitting}
                         selectedAriaLabel="Selected"
                         placeholder="Choose a cross-encoder model"
@@ -274,6 +278,7 @@ export default function CrossEncoders() {
                     >
                       <Textarea
                         disabled={submitting}
+                        data-locator="query"
                         value={data.input}
                         onChange={({ detail }) => {
                           onChange({ input: detail.value });
@@ -301,6 +306,7 @@ export default function CrossEncoders() {
                         <Textarea
                           disabled={submitting}
                           value={passage}
+                          data-locator={`passage-${index}`}
                           onChange={({ detail }) => {
                             const newPassages = [...data.passages];
                             newPassages[index] = detail.value;
@@ -311,6 +317,7 @@ export default function CrossEncoders() {
                     ))}
                     <Button
                       disabled={submitting || data.passages.length >= 5}
+                      data-locator="add-passage"
                       onClick={addPassage}
                     >
                       Add new passage
@@ -338,14 +345,20 @@ export default function CrossEncoders() {
                 }
               >
                 <SpaceBetween size="l">
-                  {ranking.map((item) => (
+                  {ranking.map((item, index) => (
                     <FormField
+                      data-locator={`passage-result-${index}`}
                       key={item.index}
                       label={`Passage ${
                         item.index + 1
                       } (score: ${item.score.toFixed(4)})`}
                     >
-                      <Textarea rows={5} value={item.passage} readOnly={true} />
+                      <Textarea
+                        data-locator={`passage-result-${index}`}
+                        rows={5}
+                        value={item.passage}
+                        readOnly={true}
+                      />
                     </FormField>
                   ))}
                 </SpaceBetween>

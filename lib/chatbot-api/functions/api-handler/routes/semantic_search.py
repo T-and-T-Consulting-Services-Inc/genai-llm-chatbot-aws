@@ -1,26 +1,28 @@
+from common.constant import ID_FIELD_VALIDATION, SAFE_PROMPT_STR_REGEX
 import genai_core.semantic_search
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from aws_lambda_powertools import Logger, Tracer
 from aws_lambda_powertools.event_handler.appsync import Router
+from genai_core.auth import UserPermissions
 
 tracer = Tracer()
 router = Router()
 logger = Logger()
+permissions = UserPermissions(router)
 
 
 class SemanticSearchRequest(BaseModel):
-    workspaceId: str
-    query: str
+    workspaceId: str = ID_FIELD_VALIDATION
+    query: str = Field(max_length=256, pattern=SAFE_PROMPT_STR_REGEX)
 
 
 @router.resolver(field_name="performSemanticSearch")
 @tracer.capture_method
+@permissions.approved_roles(
+    [permissions.ADMIN_ROLE, permissions.WORKSPACES_MANAGER_ROLE]
+)
 def semantic_search(input: dict):
     request = SemanticSearchRequest(**input)
-    if len(request.query) == 0 or len(request.query) > 1000:
-        raise genai_core.types.CommonError(
-            "Query must be between 1 and 1000 characters"
-        )
 
     result = genai_core.semantic_search.semantic_search(
         workspace_id=request.workspaceId,

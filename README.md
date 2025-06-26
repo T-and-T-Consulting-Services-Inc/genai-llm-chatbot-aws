@@ -1,51 +1,53 @@
-# Deploying a Multi-Model and Multi-RAG Powered Chatbot Using AWS CDK on AWS
+# AWS GenAI LLM Chatbot
 
-[![Release Notes](https://img.shields.io/github/v/release/aws-samples/aws-genai-llm-chatbot)](https://github.com/aws-samples/aws-genai-llm-chatbot/releases)
-[![GitHub star chart](https://img.shields.io/github/stars/aws-samples/aws-genai-llm-chatbot?style=social)](https://star-history.com/#aws-samples/aws-genai-llm-chatbot)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+Enterprise-ready generative AI chatbot with RAG capabilities.
 
-[![Deploy with GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://aws-samples.github.io/aws-genai-llm-chatbot/guide/deploy.html#deploy-with-github-codespaces)
+## Overview
 
-[![Full Documentation](https://img.shields.io/badge/Full%20Documentation-blue?style=for-the-badge&logo=Vite&logoColor=white)](https://aws-samples.github.io/aws-genai-llm-chatbot/)
+The AWS GenAI LLM Chatbot is a production-ready solution that enables organizations to deploy a secure, feature-rich chatbot powered by large language models (LLMs) with Retrieval Augmented Generation (RAG) capabilities.
 
-![sample](docs/about/assets/chabot-sample.gif "AWS GenAI Chatbot")
+## Key Features
 
-This solution provides ready-to-use code so you can start **experimenting with a variety of Large Language Models and Multimodal Language Models, settings and prompts** in your own AWS account.
+- **Multiple LLM Support**: Amazon Bedrock (Claude, Llama 2), SageMaker, and custom model endpoints
+- **Nexus Gateway Integration**: Connect to Nexus Gateway for additional model access
+- **Comprehensive RAG Implementation**: Connect to various data sources for context-aware responses
+- **Enterprise Security**: Fine-grained access controls, audit logging, and data encryption
+- **Conversation Memory**: Full conversation history with persistent storage
+- **Web UI and API Access**: Modern React interface and API endpoints for integration
+- **Cost Optimization**: Token usage tracking and cost management features
+- **Deployment Flexibility**: Multiple deployment options to fit your needs
 
-Supported model providers:
+## Getting Started
 
-- [Amazon Bedrock](https://aws.amazon.com/bedrock/)
-- [Amazon SageMaker](https://aws.amazon.com/sagemaker/) self-hosted models from Foundation, Jumpstart and HuggingFace.
-- Third-party providers via API such as Anthropic, Cohere, AI21 Labs, OpenAI, etc. [See available langchain integrations](https://python.langchain.com/docs/integrations/llms/) for a comprehensive list.
+This blueprint deploys the complete AWS GenAI LLM Chatbot solution in your AWS account.
 
-# Additional Resources
+### Prerequisites
 
-| Resource |Description|
-|:-------------|:-------------|
-| [AWS Generative AI CDK Constructs](https://github.com/awslabs/generative-ai-cdk-constructs/) | Open-source library extension of the [AWS Cloud Development Kit (AWS CDK)](https://docs.aws.amazon.com/cdk/v2/guide/home.html)  aimed to help developers build generative AI solutions using pattern-based definitions for their architecture. |
-| [Project Lakechain](https://github.com/awslabs/project-lakechain) | A powerful cloud-native, AI-powered, document (docs, images, audios, videos) processing framework built on top of the AWS CDK. |
+- AWS Account with appropriate permissions
+- AWS CLI configured with credentials
+- Node.js 18+ and npm
+- Python 3.8+
 
-# Roadmap
+### Deployment
 
-Roadmap is available through the [GitHub Project](https://github.com/orgs/aws-samples/projects/69)
+The deployment process is fully automated using AWS CDK and SeedFarmer.
 
-# Authors
+## Architecture
 
-- [Bigad Soleiman](https://www.linkedin.com/in/bigadsoleiman/)
-- [Sergey Pugachev](https://www.linkedin.com/in/spugachev/)
+The solution architecture includes:
 
-# Contributors
-[![contributors](https://contrib.rocks/image?repo=aws-samples/aws-genai-llm-chatbot&max=2000)](https://github.com/aws-samples/aws-genai-llm-chatbot/graphs/contributors)
+- Amazon Bedrock for LLM access
+- Amazon OpenSearch for vector storage
+- Amazon S3 for document storage
+- Amazon Cognito for authentication
+- AWS Lambda for serverless processing
+- Amazon API Gateway for API access
+- React-based web interface
 
-# License
+## Documentation
 
-This library is licensed under the MIT-0 License. See the LICENSE file.
+For complete documentation, visit the [GitHub repository](https://github.com/aws-samples/aws-genai-llm-chatbot).
 
-- [Changelog](CHANGELOG.md) of the project.
-- [License](LICENSE) of the project.
-- [Code of Conduct](CODE_OF_CONDUCT.md) of the project.
-- [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more information.
+## License
 
-# Legal Disclaimer
-
-You should consider doing your own independent assessment before using the content in this sample for production purposes. This may include (amongst other things) testing, securing, and optimizing the content provided in this sample, based on your specific quality control practices and standards.
+This project is licensed under the MIT-0 License.

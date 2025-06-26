@@ -1,17 +1,13 @@
 import { GraphQLResult } from "@aws-amplify/api-graphql";
 import { API, GraphQLQuery } from "@aws-amplify/api";
 import { AddUserFeedbackMutation } from "../../API.ts";
-import {
-  addUserFeedback
-} from "../../graphql/mutations.ts";
+import { addUserFeedback } from "../../graphql/mutations.ts";
 import { FeedbackData } from "../../components/chatbot/types.ts";
 
 export class UserFeedbackClient {
-
   async addUserFeedback(params: {
-    feedbackData: FeedbackData
-  }
-  ): Promise<GraphQLResult<GraphQLQuery<AddUserFeedbackMutation>>> {
+    feedbackData: FeedbackData;
+  }): Promise<GraphQLResult<GraphQLQuery<AddUserFeedbackMutation>>> {
     const result = API.graphql<GraphQLQuery<AddUserFeedbackMutation>>({
       query: addUserFeedback,
       variables: {
@@ -22,10 +18,10 @@ export class UserFeedbackClient {
           prompt: params.feedbackData.prompt,
           completion: params.feedbackData.completion,
           model: params.feedbackData.model,
+          applicationId: params.feedbackData.applicationId,
         },
       },
     });
     return result;
   }
-
 }

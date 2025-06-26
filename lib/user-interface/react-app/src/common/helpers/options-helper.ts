@@ -1,5 +1,4 @@
 import { SelectProps } from "@cloudscape-design/components";
-
 export abstract class OptionsHelper {
   static getSelectOption(model?: string): SelectProps.Option | null {
     if (!model) return null;
@@ -32,9 +31,28 @@ export abstract class OptionsHelper {
     }
   }
 
+  static parseWorkspaceValue(workspace?: SelectProps.Option): string {
+    try {
+      if (!workspace?.value) return "";
+
+      const isExistingWorkspace =
+        (workspace?.value.split("::") ?? []).length > 1;
+
+      if (isExistingWorkspace) {
+        return workspace.value;
+      }
+
+      return workspace?.label + "::" + workspace?.value;
+    } catch (error) {
+      console.error(error);
+      return "";
+    }
+  }
+
   static getSelectOptionGroups<T extends { provider: string; name: string }>(
-    data: T[]
-  ) {
+    data: T[],
+    addNone: boolean = false
+  ): (SelectProps.OptionGroup | SelectProps.Option)[] {
     const modelsMap = new Map<string, T[]>();
     data.forEach((item) => {
       let items = modelsMap.get(item.provider);
@@ -63,6 +81,16 @@ export abstract class OptionsHelper {
       };
     });
 
+    if (addNone) {
+      return [
+        {
+          label: "None",
+          value: "__none__",
+        },
+        ...options,
+      ];
+    }
+
     return options;
   }
 
@@ -86,5 +114,18 @@ export abstract class OptionsHelper {
     else if (label === "openai") label = "OpenAI";
 
     return label;
+  }
+
+  static getRolesSelectOptions<T extends string>(data: T[]) {
+    data?.sort((a, b) => a.localeCompare(b));
+
+    const options: SelectProps.Option[] = data.map((item) => {
+      return {
+        label: item,
+        value: item,
+      };
+    });
+
+    return options;
   }
 }

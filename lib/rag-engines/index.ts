@@ -1,6 +1,5 @@
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as s3 from "aws-cdk-lib/aws-s3";
-import * as iam from "aws-cdk-lib/aws-iam";
 import * as sfn from "aws-cdk-lib/aws-stepfunctions";
 import { Construct } from "constructs";
 import { Shared } from "../shared";
@@ -32,24 +31,24 @@ export class RagEngines extends Construct {
   public readonly documentsByStatusIndexName: string;
   public readonly fileImportWorkflow?: sfn.StateMachine;
   public readonly websiteCrawlingWorkflow?: sfn.StateMachine;
-  public readonly deleteWorkspaceWorkflow?: sfn.StateMachine;
+  public readonly deleteWorkspaceWorkflow: sfn.StateMachine;
+  public readonly deleteDocumentWorkflow: sfn.StateMachine;
   public readonly dataImport: DataImport;
 
   constructor(scope: Construct, id: string, props: RagEnginesProps) {
     super(scope, id);
 
-    const tables = new RagDynamoDBTables(this, "RagDynamoDBTables");
+    const tables = new RagDynamoDBTables(this, "RagDynamoDBTables", {
+      kmsKey: props.shared.kmsKey,
+      retainOnDelete: props.config.retainOnDelete,
+      deletionProtection: props.config.ddbDeletionProtection,
+    });
 
     let sageMakerRagModels: SageMakerRagModels | null = null;
-    if (
-      props.config.rag.engines.aurora.enabled ||
-      props.config.rag.engines.opensearch.enabled
-    ) {
-      sageMakerRagModels = new SageMakerRagModels(this, "SageMaker", {
-        shared: props.shared,
-        config: props.config,
-      });
-    }
+    sageMakerRagModels = new SageMakerRagModels(this, "SageMaker", {
+      shared: props.shared,
+      config: props.config,
+    });
 
     let auroraPgVector: AuroraPgVector | null = null;
     if (props.config.rag.engines.aurora.enabled) {
@@ -101,7 +100,6 @@ export class RagEngines extends Construct {
       openSearchVector: openSearchVector ?? undefined,
       kendraRetrieval: kendraRetrieval ?? undefined,
     });
-
     this.auroraPgVector = auroraPgVector;
     this.openSearchVector = openSearchVector;
     this.kendraRetrieval = kendraRetrieval;
@@ -118,6 +116,7 @@ export class RagEngines extends Construct {
     this.fileImportWorkflow = dataImport.fileImportWorkflow;
     this.websiteCrawlingWorkflow = dataImport.websiteCrawlingWorkflow;
     this.deleteWorkspaceWorkflow = workspaces.deleteWorkspaceWorkflow;
+    this.deleteDocumentWorkflow = workspaces.deleteDocumentWorkflow;
     this.dataImport = dataImport;
   }
 }

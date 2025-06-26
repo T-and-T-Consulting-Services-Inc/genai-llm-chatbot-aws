@@ -76,8 +76,10 @@ export default function DataFileUpload(props: DataFileUploadProps) {
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       const fileExtension = file.name.split(".").pop()?.toLowerCase();
-
-      if (!fileExtensions.has(`.${fileExtension}`)) {
+      const fileName = file.name;
+      if (fileName.includes(",")) {
+        errors[i] = "File name cannot contain a comma";
+      } else if (!fileExtensions.has(`.${fileExtension}`)) {
         errors[i] = "Format not supported";
       } else if (file.size > 1000 * 1000 * 100) {
         errors[i] = "File size is too large, max 100MB";
@@ -137,6 +139,7 @@ export default function DataFileUpload(props: DataFileUploadProps) {
           hasError = true;
           break;
         }
+        /* eslint-disable-next-line  @typescript-eslint/no-explicit-any */
       } catch (error: any) {
         setGlobalError(Utils.getErrorMessage(error));
         console.error(Utils.getErrorMessage(error));

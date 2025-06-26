@@ -3,7 +3,6 @@ import { CognitoHostedUIIdentityProvider } from "@aws-amplify/auth";
 
 export interface AppConfig {
   aws_project_region: string;
-  aws_cognito_identity_pool_id: string;
   aws_user_pools_id: string;
   aws_user_pools_web_client_id: string;
   config: {
@@ -14,6 +13,13 @@ export interface AppConfig {
           custom: false;
           name: CognitoHostedUIIdentityProvider;
         };
+    oauth?: {
+      domain: string;
+      redirectSignIn: string;
+      redirectSignOut: string;
+      Scopes: [];
+      responseType: string;
+    };
     rag_enabled: boolean;
     cross_encoders_enabled: boolean;
     sagemaker_embeddings_enabled: boolean;
@@ -22,12 +28,6 @@ export interface AppConfig {
     default_embeddings_model: string;
     default_cross_encoder_model: string;
     privateWebsite: boolean;
-  };
-  Storage: {
-    AWSS3: {
-      bucket: string;
-      region: string;
-    };
   };
 }
 
@@ -45,7 +45,7 @@ export type RagDocumentType =
   | "website"
   | "rssfeed"
   | "rsspost";
-export type Modality = "TEXT" | "IMAGE";
+export type Modality = "TEXT" | "IMAGE" | "VIDEO";
 export type ModelInterface = "langchain" | "multimodal";
 
 export interface DocumentSubscriptionToggleResult {
@@ -59,6 +59,11 @@ export enum DocumentSubscriptionStatus {
   DISABLED = "disabled",
   UNKNOWN = "unknown",
   DEFAULT = UNKNOWN,
+}
+
+export enum UserRole {
+  ADMIN = "admin",
+  WORKSPACE_MANAGER = "workspace_manager",
 }
 
 export interface AuroraWorkspaceCreateInput {
@@ -87,4 +92,31 @@ export interface KendraWorkspaceCreateInput {
   name: string;
   kendraIndex: SelectProps.Option | null;
   useAllData: boolean;
+}
+
+export interface BedrockKBWorkspaceCreateInput {
+  name: string;
+  knowledgeBaseId: SelectProps.Option | null;
+  hybridSearch: boolean;
+}
+
+export interface ApplicationManageInput {
+  id?: string;
+  name: string;
+  systemPrompt: string;
+  systemPromptRag: string;
+  condenseSystemPrompt: string;
+  selectedRoles: readonly SelectProps.Option[];
+  selectedModel: SelectProps.Option | null;
+  selectedWorkspace: SelectProps.Option | null;
+  allowImageInput: boolean;
+  allowDocumentInput: boolean;
+  allowVideoInput: boolean;
+  enableGuardrails: boolean;
+  createTime?: string;
+  streaming: boolean;
+  maxTokens: number;
+  temperature: number;
+  topP: number;
+  seed: number;
 }

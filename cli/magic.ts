@@ -2,10 +2,10 @@
 // You might want to add this to the previous line --experimental-specifier-resolution=node
 
 import { Command } from "commander";
-import { LIB_VERSION } from "./version.js";
+import { LIB_VERSION } from "./version";
 
 (async () => {
-  let program = new Command();
+  const program = new Command();
   program
     .version(LIB_VERSION)
     .command("config", "📦 manage the chatbot configuration")

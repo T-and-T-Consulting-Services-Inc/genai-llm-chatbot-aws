@@ -5,6 +5,8 @@ import boto3
 import requests
 import genai_core.chunks
 import genai_core.documents
+import pdfplumber
+import io
 from typing import List
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse
@@ -21,6 +23,7 @@ def crawl_urls(
     processed_urls: List[str],
     follow_links: bool,
     limit: int,
+    content_types: List[str],
 ):
     workspace_id = workspace["workspace_id"]
     document_id = document["document_id"]
@@ -32,8 +35,7 @@ def crawl_urls(
         if len(priority_queue) == 0 or len(processed_urls) == limit:
             break
 
-        priority_queue = sorted(
-            priority_queue, key=lambda val: val["priority"])
+        priority_queue = sorted(priority_queue, key=lambda val: val["priority"])
         current = priority_queue.pop(0)
         current_url = current["url"]
         current_priority = current["priority"]
@@ -47,8 +49,9 @@ def crawl_urls(
         print(f"Processing url {document_sub_id}: {current_url}")
 
         try:
-            content, local_links, _ = parse_url(current_url)
-        except:
+            content, local_links, _ = parse_url(current_url, content_types)
+        except Exception as e:
+            print(e)
             print(f"Failed to parse url: {current_url}")
             continue
 
@@ -77,11 +80,17 @@ def crawl_urls(
                     priority_queue.append(
                         {"url": link, "priority": current_priority + 1}
                     )
-    
-        # update the status for every 20 (default batch size) links 
-        if idx == batch_size or len(priority_queue) == 0 or len(processed_urls) == limit:
+
+        # update the status for every 20 (default batch size) links
+        if (
+            idx == batch_size
+            or len(priority_queue) == 0
+            or len(processed_urls) == limit
+        ):
             sub_documents = len(processed_urls)
-            genai_core.documents.set_sub_documents(workspace_id, document_id, sub_documents)
+            genai_core.documents.set_sub_documents(
+                workspace_id, document_id, sub_documents
+            )
             idx = 0
 
     return {
@@ -96,23 +105,46 @@ def crawl_urls(
     }
 
 
-def parse_url(url: str):
+def parse_url(url: str, content_types_supported: list):
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        + "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
     }
 
     root_url_parse = urlparse(url)
     base_url = f"{root_url_parse.scheme}://{root_url_parse.netloc}"
 
     response = requests.get(url, headers=headers, timeout=20)
-    if "text/html" not in response.headers["Content-Type"]:
-        raise Exception(
-            f"Invalid content type {response.headers['Content-Type']}")
-    soup = BeautifulSoup(response.content, "html.parser")
-    content = soup.get_text(separator=' ')
-    content = re.sub(r"[ \n]+", " ", content)
+    content_type = response.headers["Content-Type"]
+    links = []
 
-    links = list(set([a["href"] for a in soup.find_all("a", href=True)]))
+    if ("text/html" in content_type) and ("text/html" in content_types_supported):
+        soup = BeautifulSoup(response.content, "html.parser")
+        content = soup.get_text(separator=" ")
+        content = re.sub(r"[ \n]+", " ", content)
+        links = [a["href"] for a in soup.find_all("a", href=True)]
+
+    elif ("application/pdf" in content_type) and (
+        "application/pdf" in content_types_supported
+    ):
+        pdf_bytes = response.content  # Get the bytes content of the response
+        pdf_stream = io.BytesIO(pdf_bytes)  # Create a BytesIO stream from the bytes
+        with pdfplumber.open(pdf_stream) as pdf:
+            content = []
+            for page in pdf.pages:
+                if page.extract_text():
+                    content.append(page.extract_text().replace("\n", " "))
+
+                # Extract links from annotations
+                annotations = page.annots
+                if annotations:
+                    for annot in annotations:
+                        if annot["uri"]:
+                            links.append(annot["uri"])
+            content = " ".join(content)
+    else:
+        raise Exception(f"Unsupported content type {content_type} found at: {url}")
+
     local_links = []
     external_links = []
 

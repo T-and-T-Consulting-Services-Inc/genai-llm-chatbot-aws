@@ -14,7 +14,7 @@ import * as fs from "fs";
 function calculateHash(paths: string[]): string {
   return paths.reduce((mh, p) => {
     const dirs = fs.readdirSync(p);
-    let hash = calculateHash(
+    const hash = calculateHash(
       dirs
         .filter((d) => fs.statSync(path.join(p, d)).isDirectory())
         .map((v) => path.join(p, v))
@@ -50,19 +50,21 @@ export class SharedAssetBundler extends Construct {
   }
 
   bundleWithAsset(assetPath: string): Asset {
-    console.log(`Bundling asset ${assetPath}`);
+    console.log(assetPath, calculateHash([assetPath, ...this.sharedAssets]));
     const asset = new aws_s3_assets.Asset(
       this,
       md5hash(assetPath).slice(0, 6),
       {
         path: assetPath,
         bundling: {
-          image: DockerImage.fromBuild(
-            path.posix.join(__dirname, "alpine-zip")
-          ),
+          image:
+            process.env.NODE_ENV === "test"
+              ? DockerImage.fromRegistry("dummy-skip-build-in-test")
+              : DockerImage.fromBuild(path.posix.join(__dirname, "alpine-zip")),
           command: [
             "zip",
             "-r",
+            "-9",
             path.posix.join("/asset-output", "asset.zip"),
             ".",
           ],

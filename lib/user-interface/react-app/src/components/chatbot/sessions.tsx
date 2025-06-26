@@ -8,6 +8,7 @@ import {
   Header,
   CollectionPreferences,
   Modal,
+  Alert,
 } from "@cloudscape-design/components";
 import { DateTime } from "luxon";
 import { useState, useEffect, useContext, useCallback } from "react";
@@ -18,6 +19,7 @@ import { ApiClient } from "../../common/api-client/api-client";
 import { AppContext } from "../../common/app-context";
 import RouterButton from "../wrappers/router-button";
 import { Session } from "../../API";
+import { Utils } from "../../common/utils";
 
 export interface SessionsProps {
   readonly toolsOpen: boolean;
@@ -31,6 +33,7 @@ export default function Sessions(props: SessionsProps) {
   const [preferences, setPreferences] = useState({ pageSize: 20 });
   const [showModalDelete, setShowModalDelete] = useState(false);
   const [deleteAllSessions, setDeleteAllSessions] = useState(false);
+  const [globalError, setGlobalError] = useState<string | undefined>(undefined);
 
   const { items, collectionProps, paginationProps } = useCollection(sessions, {
     filtering: {
@@ -59,10 +62,12 @@ export default function Sessions(props: SessionsProps) {
 
     const apiClient = new ApiClient(appContext);
     try {
+      setGlobalError(undefined);
       const result = await apiClient.sessions.getSessions();
       setSessions(result.data!.listSessions);
-    } catch (e) {
-      console.log(e);
+    } catch (error) {
+      console.log(Utils.getErrorMessage(error));
+      setGlobalError(Utils.getErrorMessage(error));
       setSessions([]);
     }
   }, [appContext]);
@@ -87,6 +92,7 @@ export default function Sessions(props: SessionsProps) {
     );
     await getSessions();
     setIsLoading(false);
+    setShowModalDelete(false);
   };
 
   const deleteUserSessions = async () => {
@@ -97,6 +103,7 @@ export default function Sessions(props: SessionsProps) {
     await apiClient.sessions.deleteSessions();
     await getSessions();
     setIsLoading(false);
+    setDeleteAllSessions(false);
   };
 
   return (
@@ -137,7 +144,11 @@ export default function Sessions(props: SessionsProps) {
               >
                 Cancel
               </Button>
-              <Button variant="primary" onClick={deleteUserSessions}>
+              <Button
+                variant="primary"
+                data-locator="confirm-delete-all"
+                onClick={deleteUserSessions}
+              >
                 Ok
               </Button>
             </SpaceBetween>{" "}
@@ -147,6 +158,15 @@ export default function Sessions(props: SessionsProps) {
       >
         {`Do you want to delete ${sessions.length} sessions?`}
       </Modal>
+      {globalError && (
+        <Alert
+          statusIconAriaLabel="Error"
+          type="error"
+          header="Unable to load the sessions."
+        >
+          {globalError}
+        </Alert>
+      )}
       <Table
         {...collectionProps}
         variant="full-page"
@@ -232,6 +252,7 @@ export default function Sessions(props: SessionsProps) {
                 </Button>
                 <Button
                   iconAlt="Delete all sessions"
+                  data-locator="delete-all"
                   iconName="delete-marker"
                   variant="inline-link"
                   onClick={() => setDeleteAllSessions(true)}

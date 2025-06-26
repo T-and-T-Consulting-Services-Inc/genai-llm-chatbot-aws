@@ -14,6 +14,7 @@ import {
   Toggle,
   StatusIndicator,
   Container,
+  Alert,
 } from "@cloudscape-design/components";
 import { v4 as uuidv4 } from "uuid";
 import { AppContext } from "../../common/app-context";
@@ -33,11 +34,11 @@ import {
   ChatBotMessageType,
   ChatBotRunRequest,
   ChatBotMode,
-  ChabotInputModality,
   ChabotOutputModality,
   ChatBotHeartbeatRequest,
   ChatBotModelInterface,
   FeedbackData,
+  ChatBotToken,
 } from "./types";
 import { LoadingStatus, ModelInterface } from "../../common/types";
 import { getSelectedModelMetadata, updateMessageHistoryRef } from "./utils";
@@ -67,12 +68,20 @@ function createNewSession(): ChatSession {
     running: false,
     messageHistory: [],
     configuration: {
-      files: [],
+      images: [],
+      documents: [],
+      videos: [],
       streaming: true,
       showMetadata: false,
       maxTokens: 512,
       temperature: 0.1,
       topP: 0.9,
+      seed: 0,
+      filesBlob: {
+        images: null,
+        videos: null,
+        documents: null,
+      },
     },
   };
 }
@@ -108,6 +117,7 @@ export default function MultiChat() {
   const [readyState, setReadyState] = useState<ReadyState>(
     ReadyState.UNINSTANTIATED
   );
+  const [initError, setInitError] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     if (!appContext) return;
@@ -119,7 +129,9 @@ export default function MultiChat() {
     (async () => {
       const apiClient = new ApiClient(appContext);
       let workspaces: Workspace[] = [];
+      /* eslint-disable-next-line  @typescript-eslint/no-explicit-any */
       let modelsResult: GraphQLResult<any>;
+      /* eslint-disable-next-line  @typescript-eslint/no-explicit-any */
       let workspacesResult: GraphQLResult<any>;
       try {
         if (appContext?.config.rag_enabled) {
@@ -134,20 +146,15 @@ export default function MultiChat() {
         } else {
           modelsResult = await apiClient.models.getModels();
         }
-
-        const models = modelsResult.data
-          ? modelsResult.data.listModels.filter(
-              (m: any) =>
-                m.inputModalities.includes(ChabotInputModality.Text) &&
-                m.outputModalities.includes(ChabotOutputModality.Text)
-            )
-          : [];
+        const models = modelsResult.data ? modelsResult.data.listModels : [];
         setModels(models);
         setWorkspaces(workspaces);
         setModelsStatus("finished");
       } catch (error) {
         console.error(Utils.getErrorMessage(error));
+        setInitError(Utils.getErrorMessage(error));
         setModelsStatus("error");
+        setReadyState(ReadyState.CLOSED);
       }
     })();
 
@@ -158,7 +165,19 @@ export default function MultiChat() {
       });
       refChatSessions.current = [];
     };
-  }, [appContext]);
+  }, [appContext]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const getChatBotMode = (
+    outputModality: ChabotOutputModality
+  ): ChatBotMode => {
+    const chatBotModeMap = {
+      [ChabotOutputModality.Text]: ChatBotMode.Chain,
+      [ChabotOutputModality.Image]: ChatBotMode.ImageGeneration,
+      [ChabotOutputModality.Video]: ChatBotMode.VideoGeneration,
+    } as { [key: string]: ChatBotMode };
+
+    return chatBotModeMap[outputModality] ?? ChatBotMode.Chain;
+  };
 
   const enabled =
     readyState === ReadyState.OPEN &&
@@ -180,6 +199,9 @@ export default function MultiChat() {
         chatSession.model?.value
       );
 
+      const outputModalities = (chatSession.modelMetadata?.outputModalities ??
+        []) as ChabotOutputModality[];
+
       const value = message.trim();
       const request: ChatBotRunRequest = {
         action: ChatBotAction.Run,
@@ -188,16 +210,21 @@ export default function MultiChat() {
           modelName: name,
           provider: provider,
           sessionId: chatSession.id,
-          files: [],
+          images: [],
+          documents: [],
+          videos: [],
           workspaceId: chatSession.workspace?.value,
           modelKwargs: {
             streaming: chatSession.configuration.streaming,
             maxTokens: chatSession.configuration.maxTokens,
             temperature: chatSession.configuration.temperature,
             topP: chatSession.configuration.topP,
+            seed: chatSession.configuration.seed,
           },
           text: value,
-          mode: ChatBotMode.Chain,
+          mode: getChatBotMode(
+            outputModalities[0] ?? ChabotOutputModality.Text
+          ),
         },
       };
 
@@ -229,6 +256,7 @@ export default function MultiChat() {
 
   function subscribe(sessionId: string): ZenObservable.Subscription {
     console.log("Subscribing to AppSync");
+    const messageTokens: { [key: string]: ChatBotToken[] } = {};
     const sub = API.graphql<GraphQLSubscription<ReceiveMessagesSubscription>>({
       query: receiveMessages,
       variables: {
@@ -240,7 +268,6 @@ export default function MultiChat() {
         const data = value.data!.receiveMessages?.data;
         if (data !== undefined && data !== null) {
           const response: ChatBotMessageResponse = JSON.parse(data);
-          console.log(JSON.stringify(response));
           if (response.action === ChatBotAction.Heartbeat) {
             console.log("Heartbeat pong!");
             return;
@@ -254,7 +281,8 @@ export default function MultiChat() {
             updateMessageHistoryRef(
               session.id,
               session.messageHistory,
-              response
+              response,
+              messageTokens
             );
             if ((response.action = ChatBotAction.FinalResponse)) {
               session.running = false;
@@ -330,13 +358,21 @@ export default function MultiChat() {
     [ReadyState.UNINSTANTIATED]: "Uninstantiated",
   }[readyState];
 
-  const handleFeedback = (feedbackType: 1 | 0, idx: number, message: ChatBotHistoryItem, messageHistory: ChatBotHistoryItem[]) => {
+  const handleFeedback = (
+    feedbackType: 1 | 0,
+    idx: number,
+    message: ChatBotHistoryItem,
+    messageHistory: ChatBotHistoryItem[]
+  ) => {
     console.log("Message history: ", messageHistory);
     // metadata.prompts[0][0]
     if (message.metadata.sessionId) {
       let prompt = "";
-      if (Array.isArray(message.metadata.prompts) && Array.isArray(message.metadata.prompts[0])) { 
-          prompt = message.metadata.prompts[0][0];
+      if (
+        Array.isArray(message.metadata.prompts) &&
+        Array.isArray(message.metadata.prompts[0])
+      ) {
+        prompt = message.metadata.prompts[0][0];
       }
       const completion = message.content;
       const model = message.metadata.modelId;
@@ -346,7 +382,7 @@ export default function MultiChat() {
         feedback: feedbackType,
         prompt: prompt,
         completion: completion,
-        model: model as string
+        model: model as string,
       };
       addUserFeedback(feedbackData);
     }
@@ -356,12 +392,21 @@ export default function MultiChat() {
     if (!appContext) return;
 
     const apiClient = new ApiClient(appContext);
-    await apiClient.userFeedback.addUserFeedback({feedbackData});
+    await apiClient.userFeedback.addUserFeedback({ feedbackData });
   };
 
   return (
     <div className={styles.chat_container}>
       <SpaceBetween size="m">
+        {initError && (
+          <Alert
+            statusIconAriaLabel="Error"
+            type="error"
+            header="Unable to initalize the Chatbots."
+          >
+            {initError}
+          </Alert>
+        )}
         <SpaceBetween size="m" alignItems="end">
           <SpaceBetween size="m" direction="horizontal" alignItems="center">
             <StatusIndicator
@@ -369,9 +414,9 @@ export default function MultiChat() {
                 readyState === ReadyState.OPEN
                   ? "success"
                   : readyState === ReadyState.CONNECTING ||
-                    readyState === ReadyState.UNINSTANTIATED
-                  ? "in-progress"
-                  : "error"
+                      readyState === ReadyState.UNINSTANTIATED
+                    ? "in-progress"
+                    : "error"
               }
             >
               {readyState === ReadyState.OPEN ? "Connected" : connectionStatus}
@@ -386,6 +431,7 @@ export default function MultiChat() {
               onClick={() => addSession()}
               disabled={!enableAddModels || chatSessions.length >= 4}
               iconName="add-plus"
+              data-locator="add-model"
             >
               Add model
             </Button>
@@ -407,8 +453,8 @@ export default function MultiChat() {
           </SpaceBetween>
         </SpaceBetween>
         <ColumnLayout columns={chatSessions.length}>
-          {chatSessions.map((chatSession) => (
-            <Container key={chatSession.id}>
+          {chatSessions.map((chatSession, index) => (
+            <Container key={chatSession.id} data-locator={`model-${index}`}>
               <SpaceBetween direction="vertical" size="m">
                 <div
                   style={{
@@ -421,6 +467,7 @@ export default function MultiChat() {
                     disabled={!enableAddModels}
                     loadingText="Loading models (might take few seconds)..."
                     statusType={modelsStatus}
+                    data-locator={`select-model-${index}`}
                     placeholder="Select a model"
                     empty={
                       <div>
@@ -522,7 +569,7 @@ export default function MultiChat() {
           );
         })}
       </SpaceBetween>
-      <div className={styles.input_container}>
+      <div>
         <MultiChatInputPanel
           running={chatSessions.some((c) => c.running)}
           enabled={enabled}
